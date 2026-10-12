@@ -1,13 +1,14 @@
+import 'package:flutter/foundation.dart'; // Para kIsWeb
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
-// Modelo de Entidad actualizado con ubicacion_nodo
+// Modelo de Entidad
 class SensorReading {
   final int? id;
-  final String sensorType; // 'temperature', 'humidity', etc.
+  final String sensorType;
   final double value;
   final String timestamp;
-  final String? ubicacionNodo; // Nuevo campo agregado en V2
+  final String? ubicacionNodo;
 
   SensorReading({
     this.id,
@@ -42,6 +43,9 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
 
+  // Lista simulada en memoria exclusivamente para ejecuciones en Chrome/Web
+  final List<SensorReading> _webMemoryStorage = [];
+
   DatabaseHelper._init();
 
   Future<Database> get database async {
@@ -56,10 +60,8 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      // ⚠️ Carga de Versión 2 para forzar el evento onUpgrade
       version: 2,
       onConfigure: (db) async {
-        // Habilitar integridad referencial (Claves Foráneas)
         await db.execute('PRAGMA foreign_keys = ON');
       },
       onCreate: _createDB,
@@ -67,7 +69,6 @@ class DatabaseHelper {
     );
   }
 
-  // Creación inicial si la base de datos es totalmente nueva (Instalación limpia)
   Future _createDB(Database db, int version) async {
     await db.execute('''
       CREATE TABLE readings (
@@ -80,54 +81,50 @@ class DatabaseHelper {
     ''');
   }
 
-  // 🔄 MIGRACIÓN DE ESQUEMA (V1 a V2)
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // Alterar la tabla existente para agregar la nueva columna sin perder datos
-      await db.execute('''
-        ALTER TABLE readings ADD COLUMN ubicacion_nodo TEXT
-      ''');
+      await db.execute('ALTER TABLE readings ADD COLUMN ubicacion_nodo TEXT');
     }
   }
 
   // ==========================================
-  // OPERACIONES CRUD & TRANSACCIONES ACID
+  // OPERACIONES ADAPTADAS PARA SNOOPING Y WEB
   // ==========================================
 
-  // 1. Inserción individual parametrizada (Segura)
   Future<int> insertReading(SensorReading reading) async {
+    if (kIsWeb) {
+      // Si corre en Chrome, guarda directamente en la lista local simulada
+      _webMemoryStorage.insert(0, reading);
+      return _webMemoryStorage.length;
+    }
+
     final db = await instance.database;
     return await db.insert('readings', reading.toMap());
   }
 
-  // 2. ⚡ Inserción Masiva en Lote dentro de una Transacción ACID (Evita bloqueos de UI)
   Future<void> insertBatchReadings(List<SensorReading> readings) async {
+    if (kIsWeb) {
+      _webMemoryStorage.insertAll(0, readings);
+      return;
+    }
+
     final db = await instance.database;
     await db.transaction((txn) async {
       var batch = txn.batch();
       for (var reading in readings) {
         batch.insert('readings', reading.toMap());
       }
-      // Commit en lote sin retornar resultados individuales para máximo rendimiento
       await batch.commit(noResult: true);
     });
   }
 
-  // 3. Consulta parametrizada
-  Future<List<SensorReading>> getReadingsByType(String type) async {
-    final db = await instance.database;
-    final result = await db.query(
-      'readings',
-      where: 'sensorType = ?',
-      whereArgs: [type],
-      orderBy: 'id DESC',
-    );
-
-    return result.map((json) => SensorReading.fromMap(json)).toList();
-  }
-
-  // 4. Obtener todos los registros (para verificar migración)
   Future<List<SensorReading>> getAllReadings() async {
+    if (kIsWeb) {
+      // Simula pequeña latencia asíncrona para ver el indicador de carga del FutureBuilder
+      await Future.delayed(const Duration(milliseconds: 300));
+      return List.from(_webMemoryStorage);
+    }
+
     final db = await instance.database;
     final result = await db.query('readings', orderBy: 'id DESC');
     return result.map((json) => SensorReading.fromMap(json)).toList();

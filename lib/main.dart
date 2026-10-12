@@ -1,28 +1,76 @@
+import 'package:flutter/foundation.dart'; // Para detectar kIsWeb
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart'; // Web
 import 'package:flutter_application_1/services/csv_node_manager.dart';
+import 'package:flutter_application_1/screens/historical_alerts_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+
+  // 🌐 Si estamos ejecutando la app en Google Chrome / Web
+  if (kIsWeb) {
+    databaseFactory = databaseFactoryFfiWeb;
+  }
+
+  runApp(const SmartEnvironmentApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class SmartEnvironmentApp extends StatelessWidget {
+  const SmartEnvironmentApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Práctica 1 - CSV Node Manager',
+      title: 'Smart-Environment IoT',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: const NodeManagerScreen(),
+      home: const HomeMenuScreen(), // Menú principal
     );
   }
 }
 
-// ✅ CLASE STATEFULWIDGET CON CREATESTABLE OBLIGATORIO
+// 🏠 Pantalla de menú para elegir entre las dos prácticas
+class HomeMenuScreen extends StatelessWidget {
+  const HomeMenuScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Smart-Environment IoT'), centerTitle: true),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ElevatedButton.icon(
+              icon: const Icon(Icons.storage),
+              label: const Text('Práctica 1 - CSV Node Manager'),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NodeManagerScreen()),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.warning_amber),
+              label: const Text('Alertas Históricas'),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const HistoricalAlertsScreen()),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============ TU CÓDIGO ORIGINAL (sin cambios) ============
+
 class NodeManagerScreen extends StatefulWidget {
   const NodeManagerScreen({super.key});
 
@@ -30,11 +78,9 @@ class NodeManagerScreen extends StatefulWidget {
   State<NodeManagerScreen> createState() => _NodeManagerScreenState();
 }
 
-// ✅ CLASE STATE DONDE VIVE EL ESTADO Y EL MÉTODO BUILD()
 class _NodeManagerScreenState extends State<NodeManagerScreen> {
   final CsvNodeManager _csvManager = CsvNodeManager();
 
-  // Matriz de datos de prueba: [ID, TipoSensor, Ubicación, Estado]
   final List<List<dynamic>> _sampleNodes = [
     ["node_id", "sensor_type", "location", "status"],
     ["NODE_01", "temperature", "Zone_A", "active"],
@@ -46,7 +92,6 @@ class _NodeManagerScreenState extends State<NodeManagerScreen> {
   String _statusMessage = "Listo para probar la exportación e importación.";
   bool _isSuccess = true;
 
-  // Acción 1: Exportar datos a CSV
   Future<void> _exportCsv() async {
     try {
       String path = await _csvManager.exportNodesToCsv(_sampleNodes);
@@ -63,7 +108,6 @@ class _NodeManagerScreenState extends State<NodeManagerScreen> {
     }
   }
 
-  // Acción 2: Importar y verificar SHA-256
   Future<void> _importCsv() async {
     if (_lastExportPath.isEmpty) {
       setState(() {
@@ -97,13 +141,9 @@ class _NodeManagerScreenState extends State<NodeManagerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Nodos IoT a Procesar:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
+            const Text('Nodos IoT a Procesar:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            
-            // Visualización de la tabla de datos
             Card(
               elevation: 2,
               child: Padding(
@@ -112,16 +152,14 @@ class _NodeManagerScreenState extends State<NodeManagerScreen> {
                   children: _sampleNodes.map((row) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2.0),
-                      child: Text(row.join(" | "), style: const TextStyle(fontFamily: 'monospace')),
+                      child: Text(row.join(" | "),
+                          style: const TextStyle(fontFamily: 'monospace')),
                     );
                   }).toList(),
                 ),
               ),
             ),
-            
             const SizedBox(height: 25),
-
-            // Botones de Acción
             Row(
               children: [
                 Expanded(
@@ -130,8 +168,7 @@ class _NodeManagerScreenState extends State<NodeManagerScreen> {
                     icon: const Icon(Icons.upload_file),
                     label: const Text('Exportar CSV'),
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
+                        padding: const EdgeInsets.symmetric(vertical: 14)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -141,23 +178,17 @@ class _NodeManagerScreenState extends State<NodeManagerScreen> {
                     icon: const Icon(Icons.download_for_offline),
                     label: const Text('Importar / Validar'),
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
+                        padding: const EdgeInsets.symmetric(vertical: 14)),
                   ),
                 ),
               ],
             ),
-
             const SizedBox(height: 25),
-
-            // Panel de Resultados / Estado del Checksum
             Card(
               color: _isSuccess ? Colors.green.shade50 : Colors.red.shade50,
               shape: RoundedRectangleBorder(
                 side: BorderSide(
-                  color: _isSuccess ? Colors.green : Colors.red,
-                  width: 1.5,
-                ),
+                    color: _isSuccess ? Colors.green : Colors.red, width: 1.5),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Padding(
@@ -166,7 +197,9 @@ class _NodeManagerScreenState extends State<NodeManagerScreen> {
                   _statusMessage,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: _isSuccess ? Colors.green.shade900 : Colors.red.shade900,
+                    color: _isSuccess
+                        ? Colors.green.shade900
+                        : Colors.red.shade900,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
