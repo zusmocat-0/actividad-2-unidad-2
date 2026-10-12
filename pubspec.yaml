@@ -1,0 +1,22 @@
+name: flutter_application_1
+description: "Un nuevo proyecto de Flutter."
+publish_to: 'none'
+
+environment:
+  sdk: '^3.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  path_provider: ^2.1.2
+  csv: ^6.0.0
+  crypto: ^3.0.3
+  universal_html: ^2.2.4
+  sqflite: ^2.3.0
+  path: ^1.8.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  sqflite_common_ffi: ^2.3.0
