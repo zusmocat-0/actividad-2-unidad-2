@@ -1,14 +1,14 @@
-import 'package:flutter/foundation.dart'; // Para kIsWeb
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
-// Modelo de Entidad
 class SensorReading {
   final int? id;
   final String sensorType;
   final double value;
   final String timestamp;
   final String? ubicacionNodo;
+  final int isSynced; // 0: Pendiente de sincronizar, 1: Sincronizado
 
   SensorReading({
     this.id,
@@ -16,6 +16,7 @@ class SensorReading {
     required this.value,
     required this.timestamp,
     this.ubicacionNodo,
+    this.isSynced = 0,
   });
 
   Map<String, dynamic> toMap() {
@@ -25,6 +26,7 @@ class SensorReading {
       'value': value,
       'timestamp': timestamp,
       'ubicacion_nodo': ubicacionNodo,
+      'is_synced': isSynced,
     };
   }
 
@@ -35,6 +37,7 @@ class SensorReading {
       value: map['value'] as double,
       timestamp: map['timestamp'] as String,
       ubicacionNodo: map['ubicacion_nodo'] as String?,
+      isSynced: map['is_synced'] as int? ?? 0,
     );
   }
 }
@@ -42,8 +45,6 @@ class SensorReading {
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
-
-  // Lista simulada en memoria exclusivamente para ejecuciones en Chrome/Web
   final List<SensorReading> _webMemoryStorage = [];
 
   DatabaseHelper._init();
@@ -60,7 +61,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3, // Incrementamos versión a 3
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -76,7 +77,8 @@ class DatabaseHelper {
         sensorType TEXT NOT NULL,
         value REAL NOT NULL,
         timestamp TEXT NOT NULL,
-        ubicacion_nodo TEXT
+        ubicacion_nodo TEXT,
+        is_synced INTEGER NOT NULL DEFAULT 0
       )
     ''');
   }
@@ -85,15 +87,14 @@ class DatabaseHelper {
     if (oldVersion < 2) {
       await db.execute('ALTER TABLE readings ADD COLUMN ubicacion_nodo TEXT');
     }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE readings ADD COLUMN is_synced INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
-  // ==========================================
-  // OPERACIONES ADAPTADAS PARA SNOOPING Y WEB
-  // ==========================================
-
+  // Insertar registro localmente
   Future<int> insertReading(SensorReading reading) async {
     if (kIsWeb) {
-      // Si corre en Chrome, guarda directamente en la lista local simulada
       _webMemoryStorage.insert(0, reading);
       return _webMemoryStorage.length;
     }
@@ -102,26 +103,51 @@ class DatabaseHelper {
     return await db.insert('readings', reading.toMap());
   }
 
-  Future<void> insertBatchReadings(List<SensorReading> readings) async {
+  // Obtener solo registros pendientes de sincronizar (is_synced = 0)
+  Future<List<SensorReading>> getUnsyncedReadings() async {
     if (kIsWeb) {
-      _webMemoryStorage.insertAll(0, readings);
+      return _webMemoryStorage.where((r) => r.isSynced == 0).toList();
+    }
+
+    final db = await instance.database;
+    final result = await db.query(
+      'readings',
+      where: 'is_synced = ?',
+      whereArgs: [0],
+    );
+    return result.map((json) => SensorReading.fromMap(json)).toList();
+  }
+
+  // Marcar registro como sincronizado en la base de datos local
+  Future<void> markAsSynced(int id) async {
+    if (kIsWeb) {
+      final index = _webMemoryStorage.indexWhere((r) => r.id == id);
+      if (index != -1) {
+        final old = _webMemoryStorage[index];
+        _webMemoryStorage[index] = SensorReading(
+          id: old.id,
+          sensorType: old.sensorType,
+          value: old.value,
+          timestamp: old.timestamp,
+          ubicacionNodo: old.ubicacionNodo,
+          isSynced: 1,
+        );
+      }
       return;
     }
 
     final db = await instance.database;
-    await db.transaction((txn) async {
-      var batch = txn.batch();
-      for (var reading in readings) {
-        batch.insert('readings', reading.toMap());
-      }
-      await batch.commit(noResult: true);
-    });
+    await db.update(
+      'readings',
+      {'is_synced': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<List<SensorReading>> getAllReadings() async {
     if (kIsWeb) {
-      // Simula pequeña latencia asíncrona para ver el indicador de carga del FutureBuilder
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 200));
       return List.from(_webMemoryStorage);
     }
 
